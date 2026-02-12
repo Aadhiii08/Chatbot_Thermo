@@ -7,3 +7,4 @@ tailwindcss.exe
 node_modules/
 npm-debug.log
 package-lock.json
+backend/my_venv
