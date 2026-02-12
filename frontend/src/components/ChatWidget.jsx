@@ -42,7 +42,7 @@ const Typewriter = ({ text, onComplete }) => {
 };
 
 // --- COMPONENT: CHAT HEADER (Liquid Style) ---
-const ChatHeader = ({ onClose }) => (
+const ChatHeader = ({ onClose, isEmbedMode }) => (
   <div
     className="px-6 py-5 flex items-center justify-between relative overflow-hidden shrink-0 z-20"
     style={{
@@ -81,15 +81,17 @@ const ChatHeader = ({ onClose }) => (
       </div>
     </div>
 
-    <motion.button
-      whileHover={{ scale: 1.1, rotate: 90 }}
-      whileTap={{ scale: 0.9 }}
-      onClick={onClose}
-      className="relative z-10 p-2 text-white/80 hover:text-white rounded-xl transition-all"
-      style={{ background: 'rgba(255, 255, 255, 0.1)' }}
-    >
-      <X className="w-5 h-5" />
-    </motion.button>
+    {!isEmbedMode && (
+      <motion.button
+        whileHover={{ scale: 1.1, rotate: 90 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={onClose}
+        className="relative z-10 p-2 text-white/80 hover:text-white rounded-xl transition-all"
+        style={{ background: 'rgba(255, 255, 255, 0.1)' }}
+      >
+        <X className="w-5 h-5" />
+      </motion.button>
+    )}
   </div>
 );
 
@@ -393,7 +395,7 @@ export default function ChatWidget() {
                   animate={{ opacity: 1 }}
                   className="flex-1 flex flex-col h-full"
                 >
-                  <ChatHeader onClose={handleClose} />
+                  <ChatHeader onClose={handleClose} isEmbedMode={isEmbedMode} />
 
                   <div className="flex-1 p-6 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-white/10 relative">
                     {/* LIQUID BACKGROUND GLOWS */}
