@@ -283,7 +283,7 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
              properties = [
                  "High Strength", "Impact Resistant", "Lightweight", "Heat Resistant", 
                  "Chemical Resistant", "UV Resistant", "Outdoor Resistant", 
-                 "Electrical Insulation", "Rigid", "Structural", "Matte", 
+                 "Electrical Insulation", "Rigid", "Structural", "Matte", "Gloss", 
                  "Textured Surface", "Colored"
              ]
 
