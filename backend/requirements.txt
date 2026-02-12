@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+phonenumbers
+email-validator
+pandas
+openpyxl
+groq
+fpdf2
+pymongo
+python-dotenv
+certifi
+dnspython
+python-multipart
+requests
