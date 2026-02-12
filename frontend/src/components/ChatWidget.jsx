@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { MessageSquare, X, Send, Paperclip, ChevronLeft, Minimize2, CheckCircle2, ChevronDown, ArrowRight, Sparkles, Zap, Globe, Shield, MessageCircle } from 'lucide-react';
+import { X, Send, Paperclip, ChevronLeft, CheckCircle2, ChevronDown, Zap, Globe, Shield, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- CONFIGURATION ---
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8001";
 const LOGO_PATH = "/logo.png";
 
 // --- WELCOME FEATURES ---
