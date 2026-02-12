@@ -3,25 +3,26 @@
 from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import shutil
 import os
 from datetime import datetime
 import phonenumbers
 from email_validator import validate_email, EmailNotValidError
 import sys
-import re # Added for Regex patterns
+import re
+import traceback
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Internal imports
-from excel_handler import load_service_data
-from country_data import countries
-from proposal_logic import prepare_proposal_data
-from llm_handler import generate_descriptive_text, get_general_response, estimate_custom_service_cost
-from pdf_writer import create_proposal_pdf, create_sales_lead_pdf
-from mongo_handler import save_lead, update_lead_details, update_lead_with_resume
+# from excel_handler import load_service_data
+# from country_data import countries
+from pdf_writer import create_sales_pdf
 from utils import send_email_with_attachment
 
-app = FastAPI(title="Infinite Tech AI Agent", version="3.5.0 (Enterprise)")
+app = FastAPI(title="DM Thermoformer AI Agent", version="4.0.0")
 
 @app.get("/")
 async def health_check():
@@ -36,11 +37,11 @@ app.add_middleware(
 )
 
 # --- LOAD DATA ---
-services_data, main_services, sub_categories_others, app_sub_category_definitions = load_service_data()
-if not services_data: raise RuntimeError("FATAL: Could not load service data.")
+# (Keeping this for now validation if needed, though mostly using static lists for the new flow)
+# services_data, main_services, sub_categories_others, app_sub_category_definitions = load_service_data()
 
 BACK_COMMAND = "__GO_BACK__"
-SALES_TEAM_EMAIL = "partha@infinitetechai.com"
+SALES_TEAM_EMAIL = "aadhii0803@gmail.com" # Updated per context, or keep if verified
 
 # --- MODELS ---
 class ChatRequest(BaseModel):
@@ -50,296 +51,517 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     next_stage: str
-    bot_message: str
+    bot_message: str | None = None # Optional now, prefer bot_messages
+    bot_messages: List[str] | None = None # Support for multiple messages
     user_details: Dict[str, Any]
     ui_elements: Dict[str, Any] | None = None
 
 class ProposalRequest(BaseModel):
     user_details: Dict[str, Any]
-    category: str
-    custom_category_name: str | None = None
-    custom_category_data: Dict[str, Any] | None = None
+    category: str | None = None
 
 # --- UTILITIES ---
-def generate_local_budget_options(country_info):
-    base_budgets_inr = [(100000, 400000), (500000, 800000), (800000, 1000000), (1000000, None)]
-    exchange_rate = country_info['exchange_rate_from_inr']
-    symbol = country_info['currency_symbol']
-    options = []
-    for low, high in base_budgets_inr:
-        low_local = low * exchange_rate
-        if high:
-            high_local = high * exchange_rate
-            options.append(f"{symbol}{low_local:,.0f} - {symbol}{high_local:,.0f}")
-        else:
-            options.append(f"{symbol}{low_local:,.0f}+")
-    return options
+def extract_email(text: str):
+    match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
+    return match.group(0) if match else None
 
 def sanitize_filename(name):
     return "".join([c if c.isalnum() else "_" for c in name])
 
 # --- BACKGROUND TASK ---
-def generate_and_send_proposal_task(user_details, category, custom_category_name, custom_category_data):
+def process_lead_and_send_email(user_details: Dict[str, Any]):
+    print(f"[*] Starting process_lead_and_send_email for {user_details.get('email')}")
     try:
-        # 1. Determine Data Source
-        if custom_category_name and custom_category_data:
-            data_source = custom_category_data
-            user_details['category'] = custom_category_name
-        else:
-            main_service = user_details['main_service']
-            sub_cat = user_details.get('sub_category', '_default')
-            try: data_source = services_data[main_service][sub_cat][category]
-            except KeyError: data_source = {"cost": 0, "description": "Custom Requirement"}
+        # 1. Prepare Data
+        user_email = user_details.get('email')
+        if not user_email: 
+            print("[!] No email found in user_details")
+            return
 
-        # 2. Update Database
-        user_details['contact'] = user_details.get('phone', 'N/A')
-        update_lead_details(user_details["email"], user_details)
-        
-        # 3. Calculations
-        country_info = countries[user_details['country']]
-        proposal_costs = prepare_proposal_data(data_source, country_info, user_details['company_size'])
-        proposal_text = generate_descriptive_text(data_source, user_details.get('category'))
-        if not proposal_text: proposal_text = {"introduction": f"Proposal for {user_details.get('category')}"}
-        
-        # 4. File Generation
-        output_dir = "proposals"; os.makedirs(output_dir, exist_ok=True)
+        # 2. Generate Sales PDF
+        output_dir = "inquiries"
+        os.makedirs(output_dir, exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        project_slug = sanitize_filename(user_details.get('custom_category_name', user_details['category']))
+        company_slug = sanitize_filename(user_details.get('company', 'Client'))
         
-        client_pdf_path = os.path.join(output_dir, f"{sanitize_filename(user_details['company'])}_{project_slug}_{timestamp}_client.pdf")
-        create_proposal_pdf(user_details, proposal_text, proposal_costs, country_info, client_pdf_path)
+        pdf_filename = f"{company_slug}_Sales_Inquiry_{timestamp}.pdf"
+        pdf_path = os.path.join(output_dir, pdf_filename)
         
-        # 5. Email Client
+        create_sales_pdf(user_details, pdf_path)
+        
+        # Prepare attachments
+        attachments = [pdf_path]
+        drawing_file = user_details.get('drawing_file')
+        if drawing_file:
+            drawing_path = os.path.join(UPLOAD_DIR, drawing_file)
+            if os.path.exists(drawing_path):
+                attachments.append(drawing_path)
+        
+        # 3. Email Client (Acknowledgement)
         send_email_with_attachment(
-            receiver_email=user_details['email'],
-            subject=f"Project Proposal: {user_details.get('custom_category_name', user_details['category'])} | Infinite Tech",
-            body=f"Dear {user_details['name']},\n\nThank you for choosing Infinite Tech. Based on your requirements, we have prepared a detailed project proposal tailored to your needs.\n\nPlease find the document attached.\n\nBest Regards,\nThe Infinite Tech Team",
-            attachment_path=client_pdf_path
+            receiver_email=user_email,
+            subject=f"Inquiry Received: {user_details.get('division', 'Custom Plastic Solution')} - DM Thermoformer",
+            body=f"""Hi {user_details.get('contact_person', user_details.get('name', 'Client'))},
+
+Thank you for contacting DM Thermoformer.
+
+We have received your inquiry for a {user_details.get('division', 'custom plastic solution')}. Our technical sales team is reviewing your requirements and will contact you within 24 hours with the next steps.
+
+Best Regards,
+DM Thermoformer Sales Team"""
         )
 
-        # 6. Sales Lead
-        sales_pdf_path = os.path.join(output_dir, f"{sanitize_filename(user_details['company'])}_{project_slug}_{timestamp}_sales.pdf")
-        create_sales_lead_pdf(user_details, proposal_costs, sales_pdf_path)
-        
+        # 4. Email Sales Team (Lead)
         send_email_with_attachment(
             receiver_email=SALES_TEAM_EMAIL,
-            subject=f"🔥 HOT LEAD: {user_details['company']} - {user_details.get('category')}",
-            body=f"New Proposal Generated.\nClient: {user_details['name']}\nEmail: {user_details['email']}\nPhone: {user_details['phone']}\n\nSee full summary attached.",
-            attachment_path=sales_pdf_path
-        )
-    except Exception as e:
-        print(f"Background Task Critical Failure: {e}")
+            subject=f"🚀 NEW SALES LEAD: {user_details.get('company', 'Unknown')} - {user_details.get('division', 'Custom Plastic')}",
+            body=f"""New Sales Inquiry Received.
 
-# --- BACK & RESET LOGIC ---
-def go_back_to_stage(previous_stage: str, user_details: Dict[str, Any]) -> ChatResponse:
-    # Intelligent re-prompting logic
-    if previous_stage == "get_name":
-        user_details.pop('name', None)
-        return ChatResponse(next_stage="get_name", bot_message="Let's restart. May I have your **Full Name**?", user_details=user_details)
-    elif previous_stage == "initial_choice":
-        return ChatResponse(next_stage="initial_choice", bot_message=f"Welcome back, **{user_details.get('name')}**. How can we assist you?", user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": ["Explore Services", "Career Opportunities"]})
-    elif previous_stage == "get_email":
-        return ChatResponse(next_stage="get_email", bot_message="Please enter your **Business Email Address**.", user_details=user_details)
-    elif previous_stage == "get_phone":
-        return ChatResponse(next_stage="get_phone", bot_message="Please confirm your **Mobile Number**.", user_details=user_details, ui_elements={"type": "form", "form_type": "phone", "options": list(countries.keys())})
-    elif previous_stage == "get_company":
-        return ChatResponse(next_stage="get_company", bot_message="What is the name of your **Company**?", user_details=user_details)
+Client Contact: {user_details.get('contact_person')}
+Company: {user_details.get('company')}
+Division: {user_details.get('division')}
+Material: {user_details.get('material')}
+Quantity: {user_details.get('quantity')}
+Email: {user_email}
+Phone: {user_details.get('phone')}
+
+See full technical summary attached in the PDF.""",
+            attachment_paths=attachments
+        )
+        
+    except Exception as e:
+        print(f"[!] Background Task Error: {e}")
+        traceback.print_exc()
+
+# --- REMOVED PROPOSAL TASK ---
+# generate_and_send_full_proposal removed as per request
+
+# --- BACK LOGIC ---
+def go_back(current_stage, user_details):
+    # Simple history pop
+    if not user_details.get('stage_history'):
+        return None
+    prev = user_details['stage_history'].pop()
     
-    return ChatResponse(next_stage=previous_stage, bot_message="Returning to previous step...", user_details=user_details)
+    # Map stage to restart message/logic if needed, or just return basic prompt
+    # For now, we will rely on validity checks in main loop to re-render the proper prompt for 'prev'
+    return prev
+
+# --- UPLOAD ENDPOINT ---
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/upload_drawing")
+async def upload_drawing(resume: UploadFile = File(...), email: Optional[str] = None):
+    try:
+        file_path = os.path.join(UPLOAD_DIR, resume.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(resume.file, buffer)
+        return {"filename": resume.filename, "message": "File uploaded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- MAIN CHAT HANDLER ---
 @app.post("/chat", response_model=ChatResponse)
-async def handle_chat(request: ChatRequest):
-    stage, user_details, user_input = request.stage, request.user_details, (request.user_input.strip() if request.user_input else "")
-    if 'stage_history' not in user_details: user_details['stage_history'] = []
+async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
+    stage = request.stage
+    user_details = request.user_details
+    user_input = request.user_input.strip() if request.user_input else ""
     user_input_lower = user_input.lower()
+    
+    # Initialize history
+    if 'stage_history' not in user_details: user_details['stage_history'] = []
 
-    # --- 1. HANDLE HIDDEN START COMMAND (Friendly Welcome) ---
-    if user_input_lower == "new proposal":
+    # Global Commands
+    if user_input_lower in ["new proposal", "restart", "reset"]:
         user_details = {'stage_history': []}
         return ChatResponse(
-            next_stage="get_name", 
-            # FIXED: Friendly welcome message instead of "System reset"
-            bot_message="Hello! Welcome to **Infinite Tech**. To get started, please tell me your **Full Name**.", 
-            user_details=user_details
-        )
-
-    # --- 2. HANDLE USER INTERRUPTS (Manual Reset) ---
-    if user_input_lower in ["restart", "reset", "start over"]:
-        user_details = {'stage_history': []}
-        return ChatResponse(
-            next_stage="get_name", 
-            bot_message="System reset. Let's start fresh. May I have your **Full Name**?", 
+            next_stage="get_name",
+            bot_messages=[
+                "Hello 👋 Welcome to **DM Thermoformer**! We’re glad to assist you with custom thermoformed plastic solutions.\n\nMay I kindly know your **Name**?"
+            ],
             user_details=user_details
         )
     
-    if user_input_lower in ["help", "support", "agent"]:
-        return ChatResponse(next_stage=stage, bot_message="I am an AI agent designed to generate proposals. If you need human assistance, please email **support@infinitetech.in**.", user_details=user_details)
-
-    # Handle Back Button
+    # Back Command
     if user_input == BACK_COMMAND:
-        if user_details['stage_history']: return go_back_to_stage(user_details['stage_history'].pop(), user_details)
-        else: return ChatResponse(next_stage=stage, bot_message="We are at the beginning of the conversation.", user_details=user_details)
+        prev_stage = go_back(stage, user_details)
+        if prev_stage:
+            stage = prev_stage
+            # We "fall through" to the if/elif blocks below to re-render the prompt for 'prev_stage'
+            # But we need to avoid processing 'user_input' as an answer for that stage.
+            # So we set a flag or just return immediately with the prompt for that stage.
+            # Simpler approach: Recursive call with empty input? No, standard flow is better.
+            # We'll just set the prompt for the reverted stage.
+            pass
+        else:
+             return ChatResponse(next_stage="get_name", bot_messages=["Welcome to **DM Thermoformer**! 👋\n\nWhat is your **Name**?"], user_details={'stage_history': []})
 
-    # History Tracking
-    if stage not in ['ended', 'general_chat', 'final_generation', 'get_name', 'confirm_proposal', 'post_engagement']: 
-        if not user_details['stage_history'] or user_details['stage_history'][-1] != stage:
-             user_details['stage_history'].append(stage)
+    # --- FLOW LOGIC ---
 
-    # --- 3. CONVERSATION STAGES ---
+    # --- FLOW LOGIC ---
 
+    # --- FLOW LOGIC ---
+
+    # 1. WELCOME -> GET NAME
     if stage == "get_name":
-        # Check if user accidentally typed "new proposal" or just hit enter
-        if len(user_input) < 2 or user_input_lower == "new proposal":
-             return ChatResponse(next_stage="get_name", bot_message="Could you please provide your **Full Name**?", user_details=user_details)
+        if not user_input: 
+             return ChatResponse(
+                 next_stage="get_name", 
+                 bot_messages=[
+                     "Hello 👋 Welcome to **DM Thermoformer**! We’re glad to assist you with custom thermoformed plastic solutions.\n\nMay I kindly know your **Name**?"
+                 ],
+                 user_details=user_details
+             )
         
         user_details['name'] = user_input
+        user_details['stage_history'].append("get_name")
+        
+        division_msg = (
+            "We operate through two specialized divisions. Please choose what matches your requirement:\n\n"
+            "1️⃣ **DM Thermoformer**\n"
+            "Custom thermoformed rigid plastic packaging solutions for product handling, protection, and presentation.\n\n"
+            "2️⃣ **RA Vacform Industries**\n"
+            "Manufacturing of thick vacuum formed plastic parts and housings for industrial and equipment applications."
+        )
+        
         return ChatResponse(
-            next_stage="initial_choice", 
-            bot_message=f"Pleasure to meet you, **{user_input}**. I am the Infinite Tech AI. How may I assist you today?", 
-            user_details=user_details, 
-            ui_elements={"type": "buttons", "display_style": "pills", "options": ["Explore Services", "Career Opportunities"]}
+            next_stage="get_division",
+            bot_messages=[
+                f"Nice to meet you, **{user_input}**.",
+                division_msg
+            ],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "cards", "options": ["DM Thermoformer", "RA Vacform Industries"]}
         )
 
-    elif stage == "initial_choice":
-        if "Service" in user_input: 
-            return ChatResponse(next_stage="get_email", bot_message="Excellent choice. To generate a custom proposal, I first need your **Business Email Address**.", user_details=user_details)
-        elif "Career" in user_input: 
-            return ChatResponse(next_stage="get_email_for_job", bot_message="We are always looking for exceptional talent. Please provide your **Email Address** to start the application.", user_details=user_details)
+    # 2. GET DIVISION -> GET PRODUCT TYPE
+    elif stage == "get_division":
+        user_details['division'] = user_input
+        user_details['stage_history'].append("get_division")
+        
+        intro = ""
+        options = []
+        if "DM" in user_input:
+            intro = "Great! You’re looking for custom thermoformed packaging solutions."
+            options = [
+                "Part Handling Trays", "ESD Trays", 
+                "Toy Packaging", "Medical Packaging", "Food Packaging", 
+                "Cosmetic Packaging", "Electronics Packaging", "Automobile Packaging", 
+                "Other"
+            ]
         else:
-            # Fallback for "gibberish" or unrecognized input
-            return ChatResponse(next_stage="initial_choice", bot_message="I didn't catch that. Please select one of the options below.", user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": ["Explore Services", "Career Opportunities"]})
+            intro = "Great! You need vacuum formed plastic parts / housings."
+            options = [
+                "Robot Covers", "Drone Covers", "Medical Covers", 
+                "Automobile Thick Trays", "Hydroponic System Parts", "Other"
+            ]
 
-    # --- STRICT EMAIL VALIDATION ---
-    elif stage == "get_email":
-        try:
-            valid = validate_email(user_input, check_deliverability=False)
-            user_details['email'] = valid.email
-            return ChatResponse(next_stage="get_phone", bot_message="Thank you. Now, please select your **Country** and enter your **Mobile Number**.", user_details=user_details, ui_elements={"type": "form", "form_type": "phone", "options": list(countries.keys())})
-        except EmailNotValidError:
-            # Polite Re-ask Loop
-            return ChatResponse(next_stage="get_email", bot_message="I apologize, but that email format seems incorrect. Please enter a valid **name@company.com** address.", user_details=user_details)
+        return ChatResponse(
+            next_stage="get_product_type",
+            bot_messages=[
+                intro,
+                "What **type of product/packaging** are you looking for?"
+            ],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "pills", "options": options}
+        )
 
-    elif stage == "get_email_for_job":
-        try:
-            valid = validate_email(user_input, check_deliverability=False); user_details['email'] = valid.email
-            return ChatResponse(next_stage="job_application", bot_message="Perfect. Please **upload your Resume/CV** (PDF or Docx).", user_details=user_details, ui_elements={"type": "file_upload", "upload_to": "/upload-resume", "user_email": user_details['email']})
-        except: return ChatResponse(next_stage="get_email_for_job", bot_message="Please provide a valid **Email Address** for our HR team.", user_details=user_details)
+    # 3. GET PRODUCT TYPE -> GET PROPERTIES
+    elif stage == "get_product_type":
+        user_details['product_type'] = user_input
+        user_details['stage_history'].append("get_product_type")
+        
+        properties = []
+        if "DM" in user_details.get('division', ''):
+             properties = [
+                 "Clear", "Transparent", "Food Contact Safe", "ESD", "Anti-static", 
+                 "Heat Sealable", "Lightweight", "Glossy", "Premium Look", 
+                 "UV Resistant", "Moisture Resistant", "Colored", "Opaque"
+             ]
+        else:
+             properties = [
+                 "High Strength", "Impact Resistant", "Lightweight", "Heat Resistant", 
+                 "Chemical Resistant", "UV Resistant", "Outdoor Resistant", 
+                 "Electrical Insulation", "Rigid", "Structural", "Matte", 
+                 "Textured Surface", "Colored"
+             ]
 
-    # --- STRICT PHONE VALIDATION ---
-    elif stage == "get_phone":
-        try:
-            if ":" not in user_input: raise ValueError
-            c, p = user_input.split(":", 1)
-            # Remove spaces/dashes
-            p_clean = p.replace(" ", "").replace("-", "")
-            if len(p_clean) < 7 or not p_clean.isdigit(): raise ValueError
+        return ChatResponse(
+            next_stage="get_properties",
+            bot_messages=[
+                "Understood.",
+                "What **plastic properties** are required for your requirement?"
+            ],
+            user_details=user_details,
+            ui_elements={
+                "type": "buttons", 
+                "display_style": "pills", 
+                "multi_select": True,
+                "options": properties
+            }
+        )
+
+    # 4. GET PROPERTIES -> CONFIRM MATERIAL
+    elif stage == "get_properties":
+        user_details['properties'] = user_input
+        user_details['stage_history'].append("get_properties")
+        
+        # Simple Logic to suggest material based on properties
+        suggested_material = "Unknown"
+        options = []
+        
+        props_lower = user_input.lower()
+        
+        if "DM" in user_details.get('division', ''):
+            if "clear" in props_lower or "transparent" in props_lower:
+                suggested_material = "PET / PVC"
+            elif "food" in props_lower:
+                suggested_material = "PET / PP"
+            elif "esd" in props_lower or "anti-static" in props_lower:
+                suggested_material = "ESD PET / HIPS"
+            else:
+                suggested_material = "HIPS / PET"
             
-            user_details.update({'phone': p, 'country': c})
-            save_lead(user_details)
-            return ChatResponse(next_stage="get_company", bot_message="Details saved. What is the name of your **Company or Organization**?", user_details=user_details)
-        except:
-            return ChatResponse(next_stage="get_phone", bot_message="That phone number appears invalid. Please ensure you select your **Country** and enter a numeric **Mobile Number**.", user_details=user_details, ui_elements={"type": "form", "form_type": "phone", "options": list(countries.keys())})
+            options = ["PET", "PVC", "HIPS", "PP", "PC", "Other"]
+        else:
+            if "outdoor" in props_lower or "uv" in props_lower:
+                suggested_material = "ASA / UV ABS"
+            elif "impact" in props_lower or "strength" in props_lower:
+                suggested_material = "ABS / HDPE"
+            elif "fire" in props_lower or "heat" in props_lower:
+                suggested_material = "FR ABS / PC"
+            else:
+                suggested_material = "ABS / HIPS"
 
-    elif stage == "get_company":
-        if len(user_input) < 2: return ChatResponse(next_stage="get_company", bot_message="Could you please provide the full **Company Name**?", user_details=user_details)
+            options = ["ABS", "HIPS", "HDPE", "ASA", "PC", "Other"]
+
+        return ChatResponse(
+            next_stage="confirm_material",
+            bot_messages=[
+                f"Based on your requirements, we recommend **{suggested_material}**.",
+                "Please **confirm or select** the material you prefer:"
+            ],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "pills", "options": options}
+        )
+
+    # 5. CONFIRM MATERIAL -> GET THICKNESS
+    elif stage == "confirm_material":
+        user_details['material'] = user_input
+        user_details['stage_history'].append("confirm_material")
+        
+        msg = ""
+        options = []
+        if "DM" in user_details.get('division', ''):
+            msg = "What is the required **Material Thickness**?"
+            options = ["0.3mm", "0.5mm", "0.8mm", "1.0mm", "1.5mm", "2.0mm", "Other"]
+        else:
+            msg = "What is the required **Material Thickness**?"
+            options = ["2.0mm", "3.0mm", "4.0mm", "5.0mm", "6.0mm", "8.0mm", "Other"]
+
+        return ChatResponse(
+            next_stage="get_thickness",
+            bot_messages=[msg],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "pills", "options": options}
+        )
+
+    # 6. GET THICKNESS -> GET DRAWING
+    elif stage == "get_thickness":
+        user_details['thickness'] = user_input
+        user_details['stage_history'].append("get_thickness")
+        return ChatResponse(
+            next_stage="get_drawing",
+            bot_messages=["Do you have a **technical drawing** available for this?"],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "pills", "options": ["2D Drawing", "3D Model", "No drawing"]}
+        )
+
+    # 7. GET DRAWING -> UPLOAD OR DIMENSIONS
+    elif stage == "get_drawing":
+        user_details['drawing_available'] = user_input
+        user_details['stage_history'].append("get_drawing")
+        
+        if "No drawing" in user_input:
+            return ChatResponse(
+                next_stage="get_dimensions",
+                bot_messages=["No problem. Please provide the **Dimensions** (Length × Width × Height in mm) — measured at maximum value."],
+                user_details=user_details
+            )
+        else:
+            # Transition to upload stage
+            return ChatResponse(
+                 next_stage="upload_drawing_stage",
+                 bot_messages=["Great! Please **upload** your technical drawing file."],
+                 user_details=user_details,
+                 ui_elements={"type": "file_upload", "upload_to": "/upload_drawing"}
+            )
+
+    # 7.5. UPLOAD DRAWING -> GET QUANTITY
+    elif stage == "upload_drawing_stage":
+        # Check if the input indicates a successful upload
+        if user_input.startswith("Uploaded:"):
+             user_details['drawing_file'] = user_input.replace("Uploaded: ", "").strip()
+             user_details['stage_history'].append("upload_drawing_stage")
+             return ChatResponse(
+                next_stage="get_quantity",
+                bot_messages=["File received. How many **units** do you require?"],
+                user_details=user_details
+             )
+        else:
+             # If user types something else, remind them or allow skip?
+             # For now, let's assume they might be chatting, but we want the file.
+             return ChatResponse(
+                 next_stage="upload_drawing_stage",
+                 bot_messages=["Please **upload** the drawing file using the button above."],
+                 user_details=user_details,
+                 ui_elements={"type": "file_upload", "upload_to": "/upload_drawing"}
+             )
+
+    # 8. GET DIMENSIONS -> GET QUANTITY
+
+    # 8. GET DIMENSIONS -> GET QUANTITY
+    elif stage == "get_dimensions":
+        user_details['dimensions'] = user_input
+        user_details['stage_history'].append("get_dimensions")
+        return ChatResponse(
+            next_stage="get_quantity",
+            bot_messages=["Got it. How many **units** do you require?"],
+            user_details=user_details
+        )
+
+    # 9. GET QUANTITY -> GET URGENCY
+    elif stage == "get_quantity":
+        user_details['quantity'] = user_input
+        user_details['stage_history'].append("get_quantity")
+        return ChatResponse(
+            next_stage="get_urgency",
+            bot_messages=["When do you **need these parts/packaging** ready?"],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "pills", "options": ["Urgent (within 2 weeks)", "Within 1 month", "2-3 months", "Planning stage"]}
+        )
+
+    # 10. GET URGENCY -> GET SAMPLE
+    elif stage == "get_urgency":
+        user_details['timeline'] = user_input
+        user_details['stage_history'].append("get_urgency")
+        return ChatResponse(
+            next_stage="get_sample",
+            bot_messages=["Would you like us to develop a **sample** before bulk production?"],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "display_style": "pills", "options": ["Yes", "No"]}
+        )
+
+    # 11. GET SAMPLE -> GET DELIVERY
+    elif stage == "get_sample":
+        user_details['sample_needed'] = user_input
+        user_details['stage_history'].append("get_sample")
+        return ChatResponse(
+            next_stage="get_delivery",
+            bot_messages=["Where should the products be **delivered**? (Please mention City or Country)"],
+            user_details=user_details
+        )
+
+    # 12. GET DELIVERY -> GET FORECAST
+    elif stage == "get_delivery":
+        user_details['delivery_location'] = user_input
+        user_details['stage_history'].append("get_delivery")
+        return ChatResponse(
+            next_stage="get_forecast",
+            bot_messages=["Last technical detail: What is your **forecast demand**? (Please mention typical Monthly or Yearly quantity)"],
+            user_details=user_details
+        )
+
+    # 13. GET FORECAST -> GET COMPANY NAME
+    elif stage == "get_forecast":
+        user_details['forecast'] = user_input
+        user_details['stage_history'].append("get_forecast")
+        # Use initial name as contact person
+        user_details['contact_person'] = user_details.get('name', 'N/A') 
+        return ChatResponse(
+            next_stage="get_company_name",
+            bot_messages=["Thank you. Now, let's collect your contact details for the formal quote.", "What is your **Company Name**?"],
+            user_details=user_details
+        )
+
+    # 14. COMPANY NAME -> COMPANY ADDRESS
+    elif stage == "get_company_name":
         user_details['company'] = user_input
-        return ChatResponse(next_stage="get_company_size", bot_message="Noted. What is your current **Team Size**?", user_details=user_details, ui_elements={"type": "dropdown", "options": ["1-10", "11-50", "51-200", "200+"]})
+        user_details['stage_history'].append("get_company_name")
+        return ChatResponse(
+            next_stage="get_company_address",
+            bot_messages=["What is the **Company Address**?"],
+            user_details=user_details
+        )
 
-    elif stage == "get_company_size":
-        user_details['company_size'] = user_input
-        ci = countries.get(user_details['country'], countries['India'])
-        return ChatResponse(next_stage="get_budget", bot_message=f"What is your estimated **Project Budget** ({ci['currency_code']})?", user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": generate_local_budget_options(ci)})
+    # 15. COMPANY ADDRESS -> PHONE
+    elif stage == "get_company_address":
+        user_details['company_address'] = user_input
+        user_details['stage_history'].append("get_company_address")
+        return ChatResponse(
+            next_stage="get_phone",
+            bot_messages=["Please provide your **Phone Number**:"],
+            user_details=user_details
+        )
 
-    elif stage == "get_budget":
-        user_details['budget'] = user_input
-        return ChatResponse(next_stage="get_main_service", bot_message="Which **Service Category** are you interested in?", user_details=user_details, ui_elements={"type": "buttons", "display_style": "cards", "options": main_services})
+    # 17. PHONE -> EMAIL
+    elif stage == "get_phone":
+        user_details['phone'] = user_input
+        user_details['stage_history'].append("get_phone")
+        return ChatResponse(
+            next_stage="get_email",
+            bot_messages=["Finally, please share your **Official Email ID**:"],
+            user_details=user_details
+        )
 
-    # --- SERVICE SELECTION LOGIC ---
-    elif stage == "get_main_service":
-        user_details['main_service'] = user_input
-        if user_input == "App Development": 
-            return ChatResponse(next_stage="get_sub_category", bot_message="Please specify the **App Platform**.", user_details=user_details, ui_elements={"type": "buttons", "display_style": "cards", "options": list(app_sub_category_definitions.keys())})
-        elif user_input in sub_categories_others: 
-            return ChatResponse(next_stage="get_sub_category", bot_message="Please select a **Specific Category**.", user_details=user_details, ui_elements={"type": "buttons", "display_style": "cards", "options": sub_categories_others[user_input]})
-        elif user_input in services_data:
-            opts = list(services_data.get(user_input, {}).get('_default', {}).keys()) + ["Other Requirement"]
-            return ChatResponse(next_stage="get_specific_service", bot_message="Please select the **Service Type**.", user_details=user_details, ui_elements={"type": "buttons", "display_style": "cards", "options": opts})
-        else:
-             # Robust Fallback
-             return ChatResponse(next_stage="get_main_service", bot_message="Please select one of the available services.", user_details=user_details, ui_elements={"type": "buttons", "display_style": "cards", "options": main_services})
+    # 18. GET EMAIL -> CLOSE
+    elif stage == "get_email":
+        email = extract_email(user_input)
+        user_details['email'] = email if email else user_input
+        user_details['stage_history'].append("get_email")
+        
+        # Trigger Background Task for Sales PDF
+        background_tasks.add_task(process_lead_and_send_email, user_details)
 
-    elif stage == "get_sub_category":
-        user_details['sub_category'] = user_input; ms = user_details['main_service']
-        if ms == "App Development": opts = app_sub_category_definitions.get(user_input, []) + ["Other Requirement"]
-        else: opts = list(services_data.get(ms, {}).get(user_input, {}).keys()) + ["Other Requirement"]
-        return ChatResponse(next_stage="get_specific_service", bot_message="Please refine your selection.", user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": opts})
+        return ChatResponse(
+            next_stage="post_engagement",
+            bot_messages=[
+                "✅ **Inquiry Submitted!**",
+                "Our team will contact you shortly to provide a formal quote.",
+                "Is there anything else I can help you with?"
+            ],
+            user_details=user_details,
+            ui_elements={"type": "buttons", "options": ["Create New Inquiry", "No, I’m good"]}
+        )
 
-    elif stage == "get_specific_service":
-        if "Other" in user_input:
-            user_details['category'] = "Others"; return ChatResponse(next_stage="get_other_service_name", bot_message="Please briefly **describe your specific requirement**.", user_details=user_details)
-        user_details['category'] = user_input; user_details.pop('custom_category_name', None)
-        return ChatResponse(next_stage="get_optional_features", bot_message="Are there any **Specific Features** or integrations you need?", user_details=user_details)
+    # 19. POST ENGAGEMENT
+    elif stage == "post_engagement":
+        if "New" in user_input or "Inquiry" in user_input:
+             user_details = {'stage_history': []}
+             return ChatResponse(next_stage="get_name", bot_messages=["Hello! Welcome back.", "May I kindly know your **Name**?"], user_details=user_details)
+        
+        if "No" in user_input or "Good" in user_input:
+            return ChatResponse(
+                next_stage="closing",
+                bot_messages=["Thank you for reaching out to **DM Thermoformer**! 😊", "We look forward to working with you. Have a fantastic day!"],
+                user_details=user_details
+            )
 
-    elif stage == "get_other_service_name":
-        user_details['custom_category_name'] = user_input
-        return ChatResponse(next_stage="get_optional_features", bot_message="Understood. Any **additional requirements**?", user_details=user_details)
-
-    elif stage == "get_optional_features":
-        user_details['description'] = user_input
-        summary = f"**Proposal Ready**\n\n• **Service:** {user_details.get('custom_category_name', user_details.get('category'))}\n• **Budget:** {user_details.get('budget')}\n• **Email:** {user_details['email']}\n\nShall I generate the PDF now?"
-        return ChatResponse(next_stage="confirm_proposal", bot_message=summary, user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": ["Yes, Generate Proposal", "No, Cancel"]})
-
-    elif stage == "confirm_proposal":
-        if "Yes" in user_input:
-            return ChatResponse(next_stage="final_generation", bot_message="Processing your request. Please wait...", user_details=user_details)
-        elif "No" in user_input:
-            return ChatResponse(next_stage="post_engagement", bot_message="Request cancelled. Is there anything else I can help you with?", user_details=user_details, ui_elements={"type": "buttons", "options": ["Create New Proposal", "Contact Support"]})
-        else:
-            return ChatResponse(next_stage="confirm_proposal", bot_message="Please confirm: Shall I generate the proposal?", user_details=user_details, ui_elements={"type": "buttons", "options": ["Yes, Generate Proposal", "No, Cancel"]})
-
-    elif stage == "final_generation":
-        # Note: This message is fetched BEFORE the PDF is done in the background.
-        # Ideally, frontend waits for the "202 Accepted" then this triggers.
-        # But we want the "Continuous Flow".
         return ChatResponse(
             next_stage="post_engagement", 
-            bot_message="**Success!** Your proposal has been sent to your email.\n\nWhile you wait, would you like to explore more?", 
-            user_details=user_details,
-            ui_elements={"type": "buttons", "options": ["Create Another Proposal", "Visit Website", "Contact Sales"]}
+            bot_messages=["Is there anything else I can help you with?"], 
+            user_details=user_details, 
+            ui_elements={"type": "buttons", "options": ["Create New Inquiry", "No, I’m good"]}
         )
 
-    # --- 3. CONTINUOUS ENGAGEMENT (The Loop) ---
-    elif stage == "post_engagement":
-        if "Create" in user_input:
-             # Loop back to start (skip name)
-             user_details['stage_history'] = []
-             return ChatResponse(next_stage="initial_choice", bot_message=f"Certainly, **{user_details.get('name')}**. What service are you looking for this time?", user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": ["Explore Services", "Career Opportunities"]})
-        elif "Visit" in user_input:
-             return ChatResponse(next_stage="post_engagement", bot_message="You can visit us at **infinitetechai.com**.", user_details=user_details, ui_elements={"type": "buttons", "options": ["Create Another Proposal", "Contact Sales"]})
-        elif "Sales" in user_input or "Support" in user_input:
-             return ChatResponse(next_stage="post_engagement", bot_message="You can reach our sales team at **sales@infinitetech.in** or +91 9884777171.", user_details=user_details, ui_elements={"type": "buttons", "options": ["Create Another Proposal", "Main Menu"]})
-        elif "Main Menu" in user_input:
-             return ChatResponse(next_stage="initial_choice", bot_message="Main Menu:", user_details=user_details, ui_elements={"type": "buttons", "display_style": "pills", "options": ["Explore Services", "Career Opportunities"]})
-        
-        return ChatResponse(next_stage="post_engagement", bot_message="How else can I help?", user_details=user_details, ui_elements={"type": "buttons", "options": ["Create Another Proposal", "Main Menu"]})
+    # 20. CLOSING
+    elif stage == "closing":
+        return ChatResponse(
+            next_stage="get_name", 
+            bot_messages=["If you need anything else, just say **Hi**!", "May I kindly know your **Name**?"], 
+            user_details={'stage_history': []}
+        )
 
-    elif stage == "job_application":
-        if "Uploaded" in user_input: 
-            return ChatResponse(next_stage="post_engagement", bot_message="Resume received successfully. Our HR team will review it. Good luck!", user_details=user_details, ui_elements={"type": "buttons", "options": ["Main Menu", "Visit Website"]})
-    
-    # Fallback to AI General Chat for unknown inputs
-    return ChatResponse(next_stage="general_chat", bot_message=get_general_response(user_input), user_details=user_details)
-
-# --- OTHER ENDPOINTS ---
-@app.post("/upload-resume")
-async def handle_resume_upload(email: str = Form(...), resume: UploadFile = File(...)):
-    os.makedirs("resumes", exist_ok=True)
-    file_path = f"resumes/{email}_{resume.filename}"
-    with open(file_path, "wb") as buffer: shutil.copyfileobj(resume.file, buffer)
-    return {"message": "Success"}
-
-@app.post("/generate-proposal", status_code=202)
-async def create_proposal(request: ProposalRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(generate_and_send_proposal_task, request.user_details, request.category, request.custom_category_name, request.custom_category_data)
-    return {"message": "Accepted"}
+    # FALLBACK
+    return ChatResponse(next_stage="get_name", bot_messages=["Hello 👋 Welcome to **DM Thermoformer**! We’re glad to assist you with custom thermoformed plastic solutions.\n\nMay I kindly know your **Name**?"], user_details={'stage_history': []})
