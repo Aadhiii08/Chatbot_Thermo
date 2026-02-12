@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 
-/* Add this to the very top of index.css */
+/* Consolidated Layout & Transparency */
 body,
 html,
 #root {
@@ -13,28 +13,13 @@ html,
   padding: 0;
   width: 100%;
   height: 100%;
+  background: transparent !important;
   background-color: transparent !important;
-  /* CRITICAL */
   overflow: hidden;
-  /* Prevents scrollbars on your main site */
-  pointer-events: none;
-  /* Lets clicks pass through the empty areas */
-}
-
-/* Re-enable clicks ONLY for the chatbot */
-#root>div {
-  pointer-events: auto;
-}
-
-:root {
-  --background: #020617;
-  --foreground: #ffffff;
 }
 
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #0f172a;
-  /* Deep Navy Blue */
   color: #ffffff;
 }
 

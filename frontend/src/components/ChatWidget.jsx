@@ -4,7 +4,7 @@ import { MessageSquare, X, Send, Paperclip, ChevronLeft, Minimize2, CheckCircle2
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- CONFIGURATION ---
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 const LOGO_PATH = "/logo.png";
 
 // --- WELCOME FEATURES ---
@@ -144,6 +144,17 @@ const WelcomeScreen = () => (
 // --- MAIN WIDGET ---
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
+  const [isEmbedMode, setIsEmbedMode] = useState(false);
+
+  useEffect(() => {
+    // Check both search params and hash (WordPress sometimes uses hashes)
+    const params = new URLSearchParams(window.location.search || window.location.hash.replace('#', '?'));
+    if (params.get('mode') === 'embed') {
+      setIsEmbedMode(true);
+      setIsOpen(true);
+    }
+  }, []);
+
   const [showWelcome, setShowWelcome] = useState(true);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -219,7 +230,7 @@ export default function ChatWidget() {
         stage: chatState.stage,
         user_details: chatState.user_details,
         user_input: userMessage
-      }, { timeout: 5000 });
+      }, { timeout: 30000 });
       const data = response.data;
 
       setChatState(prev => ({ ...prev, stage: data.next_stage, user_details: data.user_details }));
@@ -246,7 +257,10 @@ export default function ChatWidget() {
 
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "⚠️ Server is taking too long to respond. Please try again." }]);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `⚠️ **Connection Error**\n\nI couldn't reach the server at: \`${API_URL}\`\n\n**Please check:**\n1. Is your Render backend active?\n2. Did you set the \`VITE_API_URL\` correctly in Render settings?`
+      }]);
       setIsLoading(false);
     }
   };
@@ -340,7 +354,7 @@ export default function ChatWidget() {
   };
 
   return (
-    <div className="fixed bottom-10 right-10 z-50 flex flex-col items-end font-sans">
+    <div className="relative w-full h-full z-50 flex flex-col items-end font-sans overflow-hidden bg-transparent" style={{ background: 'transparent' }}>
       <AnimatePresence mode="wait">
 
         {isOpen && (
@@ -349,8 +363,8 @@ export default function ChatWidget() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            // --- FIX: Height set to 900px, Liquid background ---
-            className="fixed bottom-[50px] right-20 w-[420px] h-[900px] max-h-[calc(100vh-100px)] flex flex-col overflow-hidden rounded-[32px] border border-white/10 shadow-2xl"
+            // --- CSS FIX: Fill container, avoid fixed offsets ---
+            className={`${isEmbedMode ? 'w-full h-full' : 'absolute bottom-0 right-0 w-full h-full'} flex flex-col overflow-hidden ${isEmbedMode ? '' : 'rounded-[32px] border border-white/10 shadow-2xl'}`}
             style={{
               background: '#0F172A', // Dark base
               boxShadow: '0 40px 80px -12px rgba(0, 0, 0, 0.8)',
@@ -448,7 +462,7 @@ export default function ChatWidget() {
           </motion.div>
         )}
 
-        {!isOpen && (
+        {!isOpen && !isEmbedMode && (
           <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -456,9 +470,8 @@ export default function ChatWidget() {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsOpen(true)}
-            // CHANGED: w-20 h-20 -> w-14 h-14 (Matches WhatsApp Size)
-            // CHANGED: bottom-10 right-10 -> bottom-5 right-5 (Matches WhatsApp Position)
-            className="fixed bottom-5 right-5 w-16 h-16 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.6)] flex items-center justify-center z-50 overflow-hidden group"
+            // CHANGED: Fixed -> Absolute for internal container
+            className="absolute bottom-5 right-5 w-16 h-16 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.6)] flex items-center justify-center z-50 overflow-hidden group"
             style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #8b5cf6 50%, #ec4899 100%)' }}
           >
             <div className="absolute inset-0 animate-shimmer opacity-50" />
