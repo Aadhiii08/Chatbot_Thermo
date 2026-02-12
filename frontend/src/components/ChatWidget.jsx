@@ -371,7 +371,13 @@ export default function ChatWidget() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             // --- CSS FIX: Fill container, avoid fixed offsets ---
-            className={`${isEmbedMode ? 'w-full h-full' : 'absolute bottom-0 right-0 w-full h-full'} flex flex-col overflow-hidden ${isEmbedMode ? '' : 'rounded-[32px] border border-white/10 shadow-2xl'}`}
+            className={`
+              flex flex-col overflow-hidden z-20 
+              ${isEmbedMode
+                ? 'w-full h-full'
+                : 'fixed bottom-0 right-0 w-full h-full md:bottom-6 md:right-6 md:w-[380px] md:h-[600px] md:max-h-[85vh] md:rounded-[32px] border border-white/10 shadow-2xl transition-all duration-300 ease-in-out'
+              }
+            `}
             style={{
               background: '#0F172A', // Dark base
               boxShadow: '0 40px 80px -12px rgba(0, 0, 0, 0.8)',
