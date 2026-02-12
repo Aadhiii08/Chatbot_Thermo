@@ -62,10 +62,12 @@ const ChatHeader = ({ onClose }) => (
           border: '1px solid rgba(255, 255, 255, 0.3)',
         }}
       >
-        <img src={LOGO_PATH} alt="DM Thermoformer" className="w-full h-full object-cover" />
+        <img src={LOGO_PATH} alt="DM Thermoformer & RA Vacform Industries" className="w-full h-full object-cover" />
       </div>
       <div>
-        <h3 className="text-white font-display tracking-wide font-bold drop-shadow-md">DM Thermoformer</h3>
+        <h3 className="text-white font-display tracking-tight font-bold drop-shadow-md leading-tight text-sm">
+          DM Thermoformer &<br />RA Vacform Industries
+        </h3>
         <div className="flex items-center gap-2 mt-0.5">
           <motion.div
             animate={{ scale: [1, 1.2, 1], opacity: [1, 0.8, 1] }}
