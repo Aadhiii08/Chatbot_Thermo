@@ -379,11 +379,40 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
         )
 
     # 7. GET DRAWING -> UPLOAD OR DIMENSIONS
+    # 7. GET DRAWING -> UPLOAD OR DIMENSIONS
     elif stage == "get_drawing":
         user_details['drawing_available'] = user_input
         user_details['stage_history'].append("get_drawing")
         
-        if "No drawing" in user_input:
+        print(f"DEBUG: Processing stage '{stage}' with input: '{user_input}'")
+        input_cleaned = user_input.lower().strip().replace(".", "").replace(",", "")
+        
+        negative_responses = [
+            "no drawing", "no", "na", "n/a", "not available", "none", "nope",
+            "don't have", "dont have", "skip", "no draw", "not yet", 
+            "i dont have", "i don't have", "without", "later"
+        ]
+        
+        # Check against list or if input contains key phrases
+        is_negative = False
+        
+        # 1. Exact match check
+        if input_cleaned in negative_responses:
+            is_negative = True
+        
+        # 2. Phrase check (if not exact match)
+        if not is_negative:
+            for phrase in negative_responses:
+                # Use word boundaries for short words like "no" or "na" to avoid false positives
+                # But for now, simple substring check is likely fine for this specific domain context
+                if phrase in input_cleaned:
+                    is_negative = True
+                    break
+        
+        print(f"DEBUG: Is negative response? {is_negative} (Input: '{input_cleaned}')")
+
+        if is_negative:
+            print("DEBUG: User indicated no drawing. Moving to dimensions.")
             return ChatResponse(
                 next_stage="get_dimensions",
                 bot_messages=["No problem. Please provide the **Dimensions** (Length × Width × Height in mm) — measured at maximum value."],
@@ -391,6 +420,7 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
             )
         else:
             # Transition to upload stage
+            print("DEBUG: User might have drawing. Requesting upload.")
             return ChatResponse(
                  next_stage="upload_drawing_stage",
                  bot_messages=["Great! Please **upload** your technical drawing file."],
