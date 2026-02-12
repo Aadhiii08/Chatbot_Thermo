@@ -178,7 +178,7 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
         return ChatResponse(
             next_stage="get_name",
             bot_messages=[
-                "Hello 👋 Welcome to **DM Thermoformer**! We’re glad to assist you with custom thermoformed plastic solutions.\n\nMay I kindly know your **Name**?"
+                "Hello 👋 Welcome to **DM Thermoformer & RA Vacform Industries**! We’re glad to assist you with custom plastic solutions.\n\nMay I kindly know your **Name**?"
             ],
             user_details=user_details
         )
@@ -195,7 +195,7 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
             # We'll just set the prompt for the reverted stage.
             pass
         else:
-             return ChatResponse(next_stage="get_name", bot_messages=["Welcome to **DM Thermoformer**! 👋\n\nWhat is your **Name**?"], user_details={'stage_history': []})
+             return ChatResponse(next_stage="get_name", bot_messages=["Welcome to **DM Thermoformer & RA Vacform Industries**! 👋\n\nWhat is your **Name**?"], user_details={'stage_history': []})
 
     # --- FLOW LOGIC ---
 
@@ -209,7 +209,7 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
              return ChatResponse(
                  next_stage="get_name", 
                  bot_messages=[
-                     "Hello 👋 Welcome to **DM Thermoformer**! We’re glad to assist you with custom thermoformed plastic solutions.\n\nMay I kindly know your **Name**?"
+                     "Hello 👋 Welcome to **DM Thermoformer & RA Vacform Industries**! We’re glad to assist you with custom plastic solutions.\n\nMay I kindly know your **Name**?"
                  ],
                  user_details=user_details
              )
@@ -564,4 +564,4 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
         )
 
     # FALLBACK
-    return ChatResponse(next_stage="get_name", bot_messages=["Hello 👋 Welcome to **DM Thermoformer**! We’re glad to assist you with custom thermoformed plastic solutions.\n\nMay I kindly know your **Name**?"], user_details={'stage_history': []})
+    return ChatResponse(next_stage="get_name", bot_messages=["Hello 👋 Welcome to **DM Thermoformer & RA Vacform Industries**! We’re glad to assist you with custom plastic solutions.\n\nMay I kindly know your **Name**?"], user_details={'stage_history': []})

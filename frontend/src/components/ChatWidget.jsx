@@ -119,7 +119,12 @@ const WelcomeScreen = () => (
       className="text-center space-y-2"
     >
       <h2 className="font-display text-white text-2xl font-bold">Hey there! 👋</h2>
-      <p className="text-white/70 text-sm">Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 font-semibold">DM Thermoformer</span></p>
+      <p className="text-white/70 text-sm italic">Welcome to</p>
+      <div className="flex flex-col gap-1 mt-1">
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 font-bold text-lg">DM Thermoformer</span>
+        <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest">&</span>
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 font-bold text-lg">RA Vacform Industries</span>
+      </div>
     </motion.div>
 
     <motion.div
