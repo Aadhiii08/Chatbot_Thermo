@@ -55,10 +55,8 @@ const ChatHeader = ({ onClose }) => (
 
     <div className="flex items-center gap-3 relative z-10">
       <div
-        className="w-12 h-12 rounded-2xl flex items-center justify-center p-2 shadow-lg relative overflow-hidden"
+        className="w-12 h-12 rounded-2xl flex items-center justify-center p-2 shadow-lg relative overflow-hidden bg-white"
         style={{
-          background: 'rgba(255, 255, 255, 0.2)',
-          backdropFilter: 'blur(10px)',
           border: '1px solid rgba(255, 255, 255, 0.3)',
         }}
       >
@@ -110,8 +108,10 @@ const WelcomeScreen = () => (
       transition={{ delay: 0.2 }}
       className="relative"
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-purple-400 to-pink-400 rounded-full blur-2xl opacity-50 animate-pulse" />
-      <img src={LOGO_PATH} alt="Logo" className="w-24 h-24 relative z-10 animate-float" />
+      <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 via-purple-400 to-pink-400 rounded-full blur-3xl opacity-60 animate-pulse" />
+      <div className="w-32 h-32 rounded-full bg-white flex items-center justify-center p-2 relative z-10 shadow-[0_0_50px_rgba(255,255,255,0.4)] overflow-hidden border-4 border-white/30">
+        <img src={LOGO_PATH} alt="Logo" className="w-[85%] h-[85%] object-contain scale-110" />
+      </div>
     </motion.div>
 
     <motion.div
@@ -404,8 +404,8 @@ export default function ChatWidget() {
                         className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} items-end gap-3 relative z-10`}
                       >
                         {msg.role === 'assistant' && (
-                          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg bg-white/5 border border-white/10">
-                            <img src={LOGO_PATH} className="w-6 h-6 object-contain" />
+                          <div className="w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg bg-white p-1.5 border border-white/10">
+                            <img src={LOGO_PATH} className="w-full h-full object-contain" />
                           </div>
                         )}
                         <div className={`max-w-[85%] p-4 text-[15px] leading-relaxed shadow-lg backdrop-blur-md ${msg.role === 'assistant'
@@ -424,8 +424,8 @@ export default function ChatWidget() {
                     {/* --- FIX: LOADING STATE WITH LOGO --- */}
                     {isLoading && (
                       <div className="flex gap-3 items-end">
-                        <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
-                          <img src={LOGO_PATH} className="w-6 h-6 object-contain opacity-80" />
+                        <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center p-1.5 border border-white/10">
+                          <img src={LOGO_PATH} className="w-full h-full object-contain opacity-80" />
                         </div>
                         <div className="bg-white/5 border border-white/10 px-4 py-3 rounded-2xl rounded-bl-none flex items-center gap-1">
                           <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-bounce"></span>
@@ -478,13 +478,15 @@ export default function ChatWidget() {
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsOpen(true)}
             // CHANGED: Fixed -> Absolute for internal container
-            className="absolute bottom-5 right-5 w-16 h-16 rounded-full shadow-[0_0_30px_rgba(6,182,212,0.6)] flex items-center justify-center z-50 overflow-hidden group"
-            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #8b5cf6 50%, #ec4899 100%)' }}
+            className="absolute bottom-5 right-5 w-20 h-20 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.5)] flex items-center justify-center z-50 overflow-hidden group border-2 border-white/20 bg-white"
+            style={{
+              background: 'white',
+              boxShadow: '0 0 30px rgba(255, 255, 255, 0.4), inset 0 0 20px rgba(0,0,0,0.05)'
+            }}
           >
-            <div className="absolute inset-0 animate-shimmer opacity-50" />
-            {/* CHANGED: w-12 h-12 -> w-8 h-8 (Resized inner logo to fit) */}
-            <img src={LOGO_PATH} alt="Chat" className="w-10 h-10 relative z-10 animate-float drop-shadow-md" />
-            <div className="absolute inset-0 bg-white/20 rounded-full scale-0 group-hover:scale-100 transition-transform duration-300" />
+            <div className="absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-white opacity-80" />
+            <img src={LOGO_PATH} alt="Chat" className="w-14 h-14 relative z-10 drop-shadow-sm transform group-hover:scale-110 transition-transform duration-300" />
+            <div className="absolute inset-0 bg-black/5 rounded-full scale-0 group-hover:scale-100 transition-transform duration-300" />
           </motion.button>
         )}
 
