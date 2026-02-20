@@ -574,7 +574,7 @@ async def handle_chat(request: ChatRequest, background_tasks: BackgroundTasks):
         if "No" in user_input or "Good" in user_input:
             return ChatResponse(
                 next_stage="closing",
-                bot_messages=["Thank you for reaching out to **DM Thermoformer & RA Vacform Industries**! 😊", "We look forward to working with you. Have a fantastic day!"],
+                bot_messages=["Thank you for reaching out to **RA & D**! 😊", "We look forward to working with you. Have a fantastic day!"],
                 user_details=user_details
             )
 
