@@ -213,6 +213,9 @@ export default function ChatWidget() {
   }, [messageQueue, isTyping, pendingUiElements]);
 
   const handleClose = () => {
+    // COMMUNICATION: Tell parent (WordPress) to close the iframe
+    window.parent.postMessage('close-chat', '*');
+
     setIsOpen(false);
     setTimeout(() => {
       setMessages([]);
