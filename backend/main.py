@@ -41,7 +41,7 @@ app.add_middleware(
 # services_data, main_services, sub_categories_others, app_sub_category_definitions = load_service_data()
 
 BACK_COMMAND = "__GO_BACK__"
-SALES_TEAM_EMAIL = "aadhii0803@gmail.com" # Updated per context, or keep if verified
+SALES_TEAM_EMAIL = "mgmt@dmthermoformer.com" # Updated per context, or keep if verified
 
 # --- MODELS ---
 class ChatRequest(BaseModel):

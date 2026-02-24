@@ -4,8 +4,8 @@ from fpdf import FPDF
 import os
 from datetime import datetime
 
-COMPANY_EMAIL = "partha@infinitetechai.com"
-COMPANY_PHONE = "+91 98847 77171"
+COMPANY_EMAIL = "mgmt@dmthermoformer.com"
+COMPANY_PHONE = "044 27680001"
 
 class PDF(FPDF):
     def header(self):
