@@ -1,67 +1,66 @@
 import os
 import smtplib
-from email.message import EmailMessage
-from email.utils import make_msgid
-import mimetypes
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
 def send_email_with_attachment(receiver_email, subject, body, attachment_paths=None):
-    # Load keys
-    smtp_host = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("EMAIL_PORT", 465))
+    # Load credentials
     sender_email = os.getenv("EMAIL_ADDRESS")
     sender_password = os.getenv("EMAIL_PASSWORD")
+    smtp_host = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("EMAIL_PORT", 465))
 
     if not sender_email or not sender_password:
-        print("[X] Error: SMTP Credentials (EMAIL_ADDRESS or EMAIL_PASSWORD) are missing.")
+        print("[X] Error: Email credentials are missing.")
         return False
 
-    msg = EmailMessage()
-    msg['Subject'] = subject
+    # Create the email message
+    msg = MIMEMultipart()
     msg['From'] = f"DM Thermoformer <{sender_email}>"
     msg['To'] = receiver_email
-    
-    # We use add_alternative to send as HTML
-    msg.add_alternative(f"<p>{body.replace(chr(10), '<br>')}</p>", subtype='html')
+    msg['Subject'] = subject
 
-    # helper to handle single path or list
+    # Attach the body text as HTML
+    html_body = f"<p>{body.replace(chr(10), '<br>')}</p>"
+    msg.attach(MIMEText(html_body, 'html'))
+
+    # Attach any provided files
     paths = []
     if attachment_paths:
         if isinstance(attachment_paths, str):
             paths = [attachment_paths]
         elif isinstance(attachment_paths, list):
             paths = attachment_paths
-            
+
     for path in paths:
         if path and os.path.exists(path):
             try:
                 with open(path, "rb") as f:
-                    file_data = f.read()
+                    part = MIMEApplication(f.read(), Name=os.path.basename(path))
                 
-                mime_type, _ = mimetypes.guess_type(path)
-                if mime_type is None:
-                    mime_type = 'application/octet-stream'
-                maintype, subtype = mime_type.split('/', 1)
-                
-                msg.add_attachment(file_data, maintype=maintype, subtype=subtype, filename=os.path.basename(path))
+                # Add headers for the attachment
+                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(path)}"'
+                msg.attach(part)
             except Exception as e:
                 print(f"[!] Error preparing attachment {path}: {e}")
 
+    # Send the email
     try:
-        print(f"[*] Sending email via SMTP to {receiver_email}...")
-        
-        # Connect to server
+        print(f"[*] Sending email via SMTP ({smtp_host}:{smtp_port}) to {receiver_email}...")
         if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port)
+            with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
         else:
-            server = smtplib.SMTP(smtp_host, smtp_port)
-            server.starttls()
-            
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        
-        print(f"[+] Email sent successfully via SMTP!")
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+                
+        print(f"[+] Email sent successfully to {receiver_email}!")
         return True
     except Exception as e:
-        print(f"[-] SMTP Email Request Failed: {e}")
+        print(f"[-] Failed to send email via SMTP: {e}")
         return False
